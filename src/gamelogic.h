@@ -24,6 +24,7 @@ enum class SpinOutcome {
     SkullJackpotLoss,
     ThreeBar,
     ThreeOfAKind,
+    TwoOfAKind,
     NoPayout
 };
 
@@ -64,6 +65,7 @@ public:
     [[nodiscard]] qint64 calculateScore() const;
 
     static SpinOutcome classify(const std::array<Symbol, 3> &reels);
+    static int threeMatchPayoutMultiplier(Symbol symbol);
     static QString symbolName(Symbol symbol);
 
 private:

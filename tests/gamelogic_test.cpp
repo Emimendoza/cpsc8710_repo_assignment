@@ -2,8 +2,10 @@
 
 #include <QTest>
 
+#include <array>
 #include <cstddef>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -36,9 +38,8 @@ private slots:
     void betCannotGoBelowMinimum();
     void betCannotExceedCoins();
     void validRollIncrementsOnce();
-    void twoMatchingSymbolsDoNotPay();
-    void threeMatchingSymbolsPayDouble();
-    void threeBarsPayFiveTimes();
+    void twoMatchingSymbolsReturnBet();
+    void threeMatchUsesConfiguredMultiplier();
     void threeSkullsEndGameAndLoseEverything();
     void scoreUsesNetChangeAndRollNumber();
     void cannotRollAfterGameOver();
@@ -80,37 +81,44 @@ void GameLogicTest::validRollIncrementsOnce()
     QCOMPARE(game.state().rolls, 1);
 }
 
-void GameLogicTest::twoMatchingSymbolsDoNotPay()
+void GameLogicTest::twoMatchingSymbolsReturnBet()
 {
     auto game = withSequence({Symbol::Bar, Symbol::Bar, Symbol::Seven});
-    setBet(game, 4);
+    setBet(game, 5);
     const auto result = game.spin();
     QVERIFY(result.has_value());
-    QCOMPARE(result->outcome, SpinOutcome::NoPayout);
-    QCOMPARE(result->payout, 0);
-    QCOMPARE(game.state().coins, 96);
-    QCOMPARE(game.state().moneyWon, 0);
+    QCOMPARE(result->outcome, SpinOutcome::TwoOfAKind);
+    QCOMPARE(result->payout, 5);
+    QCOMPARE(game.state().coins, 100);
+    QCOMPARE(game.state().moneyWon, 5);
+    QCOMPARE(game.state().moneyLost, 5);
+    QCOMPARE(game.state().score, 0);
 }
 
-void GameLogicTest::threeMatchingSymbolsPayDouble()
+void GameLogicTest::threeMatchUsesConfiguredMultiplier()
 {
-    auto game = withSequence({Symbol::Cherry, Symbol::Cherry, Symbol::Cherry});
-    setBet(game, 4);
-    const auto result = game.spin();
-    QCOMPARE(result->outcome, SpinOutcome::ThreeOfAKind);
-    QCOMPARE(result->payout, 8);
-    QCOMPARE(game.state().coins, 104);
-    QCOMPARE(game.state().moneyWon, 8);
-}
+    const std::array configuredPayouts {
+        std::pair {Symbol::Bar, GameConfig::BarPayoutMultiplier},
+        std::pair {Symbol::Seven, GameConfig::SevenPayoutMultiplier},
+        std::pair {Symbol::Cherry, GameConfig::CherryPayoutMultiplier},
+        std::pair {Symbol::Lemon, GameConfig::LemonPayoutMultiplier},
+        std::pair {Symbol::Orange, GameConfig::OrangePayoutMultiplier},
+        std::pair {Symbol::Bell, GameConfig::BellPayoutMultiplier},
+    };
 
-void GameLogicTest::threeBarsPayFiveTimes()
-{
-    auto game = withSequence({Symbol::Bar, Symbol::Bar, Symbol::Bar});
-    setBet(game, 4);
-    const auto result = game.spin();
-    QCOMPARE(result->outcome, SpinOutcome::ThreeBar);
-    QCOMPARE(result->payout, 20);
-    QCOMPARE(game.state().coins, 116);
+    for (const auto &[symbol, multiplier] : configuredPayouts) {
+        auto game = withSequence({symbol, symbol, symbol});
+        setBet(game, 4);
+        const auto result = game.spin();
+        QVERIFY(result.has_value());
+        QCOMPARE(result->outcome, symbol == Symbol::Bar
+                                      ? SpinOutcome::ThreeBar
+                                      : SpinOutcome::ThreeOfAKind);
+        QCOMPARE(GameLogic::threeMatchPayoutMultiplier(symbol), multiplier);
+        QCOMPARE(result->payout, 4 * multiplier);
+        QCOMPARE(game.state().coins, 100 - 4 + (4 * multiplier));
+        QCOMPARE(game.state().moneyWon, 4 * multiplier);
+    }
 }
 
 void GameLogicTest::threeSkullsEndGameAndLoseEverything()
@@ -118,6 +126,9 @@ void GameLogicTest::threeSkullsEndGameAndLoseEverything()
     auto game = withSequence({Symbol::Skull, Symbol::Skull, Symbol::Skull});
     setBet(game, 7);
     const auto result = game.spin();
+    QCOMPARE(GameConfig::SkullPayoutMultiplier,
+             GameConfig::LoseAllCoinsPayoutMultiplier);
+    QCOMPARE(GameConfig::SkullPayoutMultiplier, -1);
     QCOMPARE(result->outcome, SpinOutcome::SkullJackpotLoss);
     QCOMPARE(game.state().coins, 0);
     QCOMPARE(game.state().moneyLost, 100);

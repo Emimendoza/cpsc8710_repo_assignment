@@ -79,16 +79,19 @@ std::optional<SpinResult> GameLogic::spin()
 
     switch (result.outcome) {
     case SpinOutcome::SkullJackpotLoss:
+        Q_ASSERT(threeMatchPayoutMultiplier(result.reels[0])
+                 == GameConfig::LoseAllCoinsPayoutMultiplier);
         state_.moneyLost += state_.coins;
         state_.coins = 0;
         break;
     case SpinOutcome::ThreeBar:
-        result.payout = GameConfig::BarPayoutMultiplier * result.wager;
+    case SpinOutcome::ThreeOfAKind:
+        result.payout = threeMatchPayoutMultiplier(result.reels[0]) * result.wager;
         state_.coins += result.payout;
         state_.moneyWon += result.payout;
         break;
-    case SpinOutcome::ThreeOfAKind:
-        result.payout = GameConfig::MatchingPayoutMultiplier * result.wager;
+    case SpinOutcome::TwoOfAKind:
+        result.payout = GameConfig::TwoMatchingPayoutMultiplier * result.wager;
         state_.coins += result.payout;
         state_.moneyWon += result.payout;
         break;
@@ -111,16 +114,34 @@ qint64 GameLogic::calculateScore() const
 SpinOutcome GameLogic::classify(const std::array<Symbol, 3> &reels)
 {
     const bool allMatch = reels[0] == reels[1] && reels[1] == reels[2];
-    if (!allMatch) {
-        return SpinOutcome::NoPayout;
+    if (allMatch) {
+        if (threeMatchPayoutMultiplier(reels[0])
+            == GameConfig::LoseAllCoinsPayoutMultiplier) {
+            return SpinOutcome::SkullJackpotLoss;
+        }
+        if (reels[0] == Symbol::Bar) {
+            return SpinOutcome::ThreeBar;
+        }
+        return SpinOutcome::ThreeOfAKind;
     }
-    if (reels[0] == Symbol::Skull) {
-        return SpinOutcome::SkullJackpotLoss;
+
+    const bool hasPair = reels[0] == reels[1] || reels[0] == reels[2]
+                         || reels[1] == reels[2];
+    return hasPair ? SpinOutcome::TwoOfAKind : SpinOutcome::NoPayout;
+}
+
+int GameLogic::threeMatchPayoutMultiplier(Symbol symbol)
+{
+    switch (symbol) {
+    case Symbol::Skull: return GameConfig::SkullPayoutMultiplier;
+    case Symbol::Bar: return GameConfig::BarPayoutMultiplier;
+    case Symbol::Seven: return GameConfig::SevenPayoutMultiplier;
+    case Symbol::Cherry: return GameConfig::CherryPayoutMultiplier;
+    case Symbol::Lemon: return GameConfig::LemonPayoutMultiplier;
+    case Symbol::Orange: return GameConfig::OrangePayoutMultiplier;
+    case Symbol::Bell: return GameConfig::BellPayoutMultiplier;
     }
-    if (reels[0] == Symbol::Bar) {
-        return SpinOutcome::ThreeBar;
-    }
-    return SpinOutcome::ThreeOfAKind;
+    return 0;
 }
 
 QString GameLogic::symbolName(Symbol symbol)

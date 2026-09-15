@@ -38,8 +38,15 @@ namespace GameConfig {
 constexpr int StartingCoins = 100;
 constexpr int MinimumBet = 1;
 constexpr int MaximumBet = StartingCoins; // Also clamp to current coins.
-constexpr int MatchingPayoutMultiplier = 2;
+constexpr int TwoMatchingPayoutMultiplier = 1;
+constexpr int LoseAllCoinsPayoutMultiplier = -1;
+constexpr int SkullPayoutMultiplier = LoseAllCoinsPayoutMultiplier;
 constexpr int BarPayoutMultiplier = 5;
+constexpr int SevenPayoutMultiplier = 2;
+constexpr int CherryPayoutMultiplier = 2;
+constexpr int LemonPayoutMultiplier = 2;
+constexpr int OrangePayoutMultiplier = 2;
+constexpr int BellPayoutMultiplier = 2;
 constexpr int ScoreRollMultiplier = 1; // Score = net money change * roll number * this value.
 }
 ```
@@ -49,10 +56,11 @@ Interpretation of payouts:
 1. A valid roll requires `bet >= MinimumBet` and `bet <= coins`.
 2. Deduct the bet immediately when the roll begins.
 3. Add the payout to coins after evaluating the result.
-4. A 2x result therefore returns `2 * bet`; because the bet was already paid, the player's net coin change is `+bet`.
-5. A 5x BAR result returns `5 * bet`; the player's net coin change is `+4 * bet`.
-6. A skull result sets coins to zero, regardless of the selected bet or the pre-roll balance.
-7. If coins are zero at any point, the game is over and no further rolls are allowed.
+4. Exactly two matching symbols return `1 * bet`; because the bet was already paid, the player's net coin change is zero.
+5. A 2x triple result returns `2 * bet`; because the bet was already paid, the player's net coin change is `+bet`.
+6. A 5x BAR result returns `5 * bet`; the player's net coin change is `+4 * bet`.
+7. A three-symbol match configured with the special `-1` multiplier sets coins to zero. By default this is the three-Skull result.
+8. If coins are zero at any point, the game is over and no further rolls are allowed.
 
 The exact meaning of “money won” and “money lost” must be tracked explicitly:
 
@@ -83,15 +91,15 @@ Evaluate outcomes in this order:
 
 | Reel result | Effect |
 |---|---|
-| Skull, Skull, Skull | Lose all coins; game over; no payout |
+| Three symbols whose multiplier is `-1` | Lose all coins; game over; no payout |
 | Three BAR symbols | Credit `BarPayoutMultiplier * bet` |
-| Any other three identical symbols | Credit `MatchingPayoutMultiplier * bet` |
-| Exactly two matching symbols | No payout and no extra penalty |
+| Any other three identical symbols | Credit that symbol's configured payout multiplier times the bet |
+| Exactly two matching symbols | Credit `TwoMatchingPayoutMultiplier * bet`, returning the wager by default |
 | Three different symbols | No payout and no extra penalty |
 
-“Two matching” includes any pair, including two BAR symbols. A result is only “three BAR” when all three symbols are BAR. A three-Skull result always takes precedence over generic three-of-a-kind.
+“Two matching” includes any pair, including two BAR or two Skull symbols. A result is only “three BAR” when all three symbols are BAR. A three-Skull result uses the configured `-1` sentinel and takes precedence over generic three-of-a-kind.
 
-For maintainability, use a result enum such as `SkullJackpotLoss`, `ThreeBar`, `ThreeOfAKind`, and `NoPayout`.
+For maintainability, use a result enum such as `SkullJackpotLoss`, `ThreeBar`, `ThreeOfAKind`, `TwoOfAKind`, and `NoPayout`.
 
 ## 5. Window and layout
 
@@ -251,9 +259,9 @@ The coding agent should provide unit tests for the game-logic class covering:
 - Bet cannot go below the minimum.
 - Bet cannot exceed current coins.
 - A valid roll increments rolls exactly once.
-- Two matching symbols produce no payout.
-- Three non-BAR identical symbols credit exactly `2 * bet`.
-- Three BAR symbols credit exactly `5 * bet`.
+- Two matching symbols credit exactly `1 * bet`, returning the wager.
+- Every three-symbol match uses its symbol-specific configured multiplier.
+- Three BAR symbols credit exactly `BarPayoutMultiplier * bet`.
 - Three Skull symbols set coins to zero and game over.
 - Score follows `netMoneyChange * currentRoll * ScoreRollMultiplier`.
 - No roll is possible after game over.
@@ -278,4 +286,3 @@ Manual UI acceptance checks:
 - Avoid blocking sleeps in the GUI thread. Use `QTimer` for animation.
 - Keep the payout classification as a pure function so it can be tested without constructing widgets.
 - Log no sensitive information; there is no user data to persist.
-

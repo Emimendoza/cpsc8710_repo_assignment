@@ -291,6 +291,8 @@ QString MainWindow::resultMessage(const SpinResult &result) const
     case SpinOutcome::ThreeOfAKind:
         return QStringLiteral("Three %1s! +%2 coins")
             .arg(GameLogic::symbolName(result.reels[0]), QString::number(result.payout));
+    case SpinOutcome::TwoOfAKind:
+        return QStringLiteral("Pair — %1 coin bet returned").arg(result.payout);
     case SpinOutcome::NoPayout:
         return QStringLiteral("No payout");
     }
