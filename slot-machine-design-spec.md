@@ -38,15 +38,16 @@ namespace GameConfig {
 constexpr int StartingCoins = 100;
 constexpr int MinimumBet = 1;
 constexpr int MaximumBet = StartingCoins; // Also clamp to current coins.
-constexpr int TwoMatchingPayoutMultiplier = 1;
-constexpr int LoseAllCoinsPayoutMultiplier = -1;
-constexpr int SkullPayoutMultiplier = LoseAllCoinsPayoutMultiplier;
-constexpr int BarPayoutMultiplier = 5;
-constexpr int SevenPayoutMultiplier = 2;
-constexpr int CherryPayoutMultiplier = 2;
-constexpr int LemonPayoutMultiplier = 2;
-constexpr int OrangePayoutMultiplier = 2;
-constexpr int BellPayoutMultiplier = 2;
+constexpr float TwoMatchingPayoutMultiplier = 1.0F;
+constexpr float LoseAllCoinsPayoutMultiplier = -1.0F;
+constexpr float SkullPayoutMultiplier = LoseAllCoinsPayoutMultiplier;
+constexpr float BarPayoutMultiplier = 5.0F;
+constexpr float SevenPayoutMultiplier = 2.0F;
+constexpr float CherryPayoutMultiplier = 2.0F;
+constexpr float LemonPayoutMultiplier = 2.0F;
+constexpr float OrangePayoutMultiplier = 2.0F;
+constexpr float BellPayoutMultiplier = 2.0F;
+constexpr bool RiggedMode = false;
 constexpr int ScoreRollMultiplier = 1; // Score = net money change * roll number * this value.
 }
 ```
@@ -55,16 +56,17 @@ Interpretation of payouts:
 
 1. A valid roll requires `bet >= MinimumBet` and `bet <= coins`.
 2. Deduct the bet immediately when the roll begins.
-3. Add the payout to coins after evaluating the result.
-4. Exactly two matching symbols return `1 * bet`; because the bet was already paid, the player's net coin change is zero.
-5. A 2x triple result returns `2 * bet`; because the bet was already paid, the player's net coin change is `+bet`.
-6. A 5x BAR result returns `5 * bet`; the player's net coin change is `+4 * bet`.
-7. A three-symbol match configured with the special `-1` multiplier sets coins to zero. By default this is the three-Skull result.
-8. If coins are zero at any point, the game is over and no further rolls are allowed.
+3. Calculate a payout as `floor(bet * payoutMultiplier)` so all credited amounts are whole coins and fractional results round down.
+4. Add the calculated payout to coins after evaluating the result.
+5. Exactly two matching symbols return `1.0F * bet` by default; because the bet was already paid, the player's net coin change is zero.
+6. A `2.0F` triple result returns `2 * bet`; because the bet was already paid, the player's net coin change is `+bet`.
+7. A `5.0F` BAR result returns `5 * bet`; the player's net coin change is `+4 * bet`.
+8. A three-symbol match configured with the special `-1.0F` multiplier sets coins to zero. By default this is the three-Skull result.
+9. If coins are zero at any point, the game is over and no further rolls are allowed.
 
 The exact meaning of “money won” and “money lost” must be tracked explicitly:
 
-- `moneyWon`: gross payout coins credited by successful matching outcomes.
+- `moneyWon`: gross, rounded-down payout coins credited by successful matching outcomes.
 - `moneyLost`: wager coins deducted on every valid roll, plus any remaining coins destroyed by the skull outcome.
 - `netMoneyChange = moneyWon - moneyLost`.
 - `score = netMoneyChange * currentRoll * ScoreRollMultiplier`.
@@ -85,19 +87,19 @@ Use a standard slot-machine icon set containing at least:
 - `Orange`
 - `Bell`
 
-The three reels are independent random symbol selections unless a future configuration adds weighted or controlled outcomes. Store symbols as an enum plus display metadata, not as UI strings alone.
+The three reels are independent random symbol selections during normal play. When `RiggedMode` is enabled, generate one random symbol per roll and repeat it across all three reels, guaranteeing a three-symbol match. Store symbols as an enum plus display metadata, not as UI strings alone.
 
 Evaluate outcomes in this order:
 
 | Reel result | Effect |
 |---|---|
-| Three symbols whose multiplier is `-1` | Lose all coins; game over; no payout |
-| Three BAR symbols | Credit `BarPayoutMultiplier * bet` |
-| Any other three identical symbols | Credit that symbol's configured payout multiplier times the bet |
-| Exactly two matching symbols | Credit `TwoMatchingPayoutMultiplier * bet`, returning the wager by default |
+| Three symbols whose multiplier is `-1.0F` | Lose all coins; game over; no payout |
+| Three BAR symbols | Credit `floor(BarPayoutMultiplier * bet)` |
+| Any other three identical symbols | Credit the rounded-down product of that symbol's configured multiplier and the bet |
+| Exactly two matching symbols | Credit `floor(TwoMatchingPayoutMultiplier * bet)`, returning the wager by default |
 | Three different symbols | No payout and no extra penalty |
 
-“Two matching” includes any pair, including two BAR or two Skull symbols. A result is only “three BAR” when all three symbols are BAR. A three-Skull result uses the configured `-1` sentinel and takes precedence over generic three-of-a-kind.
+“Two matching” includes any pair, including two BAR or two Skull symbols. A result is only “three BAR” when all three symbols are BAR. A three-Skull result uses the configured `-1.0F` sentinel and takes precedence over generic three-of-a-kind.
 
 For maintainability, use a result enum such as `SkullJackpotLoss`, `ThreeBar`, `ThreeOfAKind`, `TwoOfAKind`, and `NoPayout`.
 
@@ -212,7 +214,7 @@ On lever activation:
 1. Check `gameOver`, animation state, and `canRoll()`.
 2. Increment `rolls`.
 3. Deduct `bet` and add it to `moneyLost`.
-4. Generate three symbols.
+4. Generate three independent symbols in normal mode. In rigged mode, generate one symbol and repeat it on all three reels.
 5. Classify the result using the precedence in Section 4.
 6. Apply the result's payout or skull loss.
 7. Recalculate score.
@@ -238,6 +240,8 @@ Inject or wrap the random-symbol generator so game logic can be tested determini
 
 Do not use randomness to decide payout separately from the reel symbols. Payout must always be derived from the displayed final symbols.
 
+Expose `GameConfig::RiggedMode` as a compile-time switch, defaulting to `false`. The game-logic constructor may also accept a rigged-mode override so automated tests can exercise the mode without editing the configuration and rebuilding. When active, rigged mode must guarantee three identical final symbols on every valid roll. The UI should visibly identify rigged mode when it is enabled through `gameconfig.h`.
+
 Optional future balance control:
 
 ```cpp
@@ -259,10 +263,12 @@ The coding agent should provide unit tests for the game-logic class covering:
 - Bet cannot go below the minimum.
 - Bet cannot exceed current coins.
 - A valid roll increments rolls exactly once.
-- Two matching symbols credit exactly `1 * bet`, returning the wager.
+- Two matching symbols credit `floor(TwoMatchingPayoutMultiplier * bet)`, returning the wager with the default multiplier.
 - Every three-symbol match uses its symbol-specific configured multiplier.
-- Three BAR symbols credit exactly `BarPayoutMultiplier * bet`.
+- Fractional payout results round down to whole coins.
+- Three BAR symbols credit exactly `floor(BarPayoutMultiplier * bet)`.
 - Three Skull symbols set coins to zero and game over.
+- Rigged mode produces three identical symbols on every valid roll.
 - Score follows `netMoneyChange * currentRoll * ScoreRollMultiplier`.
 - No roll is possible after game over.
 - A coin decrease clamps the bet when necessary.

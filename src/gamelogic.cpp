@@ -3,6 +3,7 @@
 #include <QRandomGenerator>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -12,12 +13,12 @@ constexpr int SymbolCount = 7;
 GameLogic::GameLogic()
     : GameLogic([] {
           return static_cast<Symbol>(QRandomGenerator::global()->bounded(SymbolCount));
-      })
+      }, GameConfig::RiggedMode)
 {
 }
 
-GameLogic::GameLogic(SymbolGenerator generator)
-    : generator_(std::move(generator))
+GameLogic::GameLogic(SymbolGenerator generator, bool riggedMode)
+    : generator_(std::move(generator)), riggedMode_(riggedMode)
 {
 }
 
@@ -71,8 +72,12 @@ std::optional<SpinResult> GameLogic::spin()
     state_.coins -= result.wager;
     state_.moneyLost += result.wager;
 
-    for (Symbol &symbol : result.reels) {
-        symbol = generator_();
+    result.reels[0] = generator_();
+    if (riggedMode_) {
+        result.reels.fill(result.reels[0]);
+    } else {
+        result.reels[1] = generator_();
+        result.reels[2] = generator_();
     }
     state_.reels = result.reels;
     result.outcome = classify(result.reels);
@@ -86,12 +91,14 @@ std::optional<SpinResult> GameLogic::spin()
         break;
     case SpinOutcome::ThreeBar:
     case SpinOutcome::ThreeOfAKind:
-        result.payout = threeMatchPayoutMultiplier(result.reels[0]) * result.wager;
+        result.payout = calculatePayout(result.wager,
+                                        threeMatchPayoutMultiplier(result.reels[0]));
         state_.coins += result.payout;
         state_.moneyWon += result.payout;
         break;
     case SpinOutcome::TwoOfAKind:
-        result.payout = GameConfig::TwoMatchingPayoutMultiplier * result.wager;
+        result.payout = calculatePayout(result.wager,
+                                        GameConfig::TwoMatchingPayoutMultiplier);
         state_.coins += result.payout;
         state_.moneyWon += result.payout;
         break;
@@ -130,7 +137,7 @@ SpinOutcome GameLogic::classify(const std::array<Symbol, 3> &reels)
     return hasPair ? SpinOutcome::TwoOfAKind : SpinOutcome::NoPayout;
 }
 
-int GameLogic::threeMatchPayoutMultiplier(Symbol symbol)
+float GameLogic::threeMatchPayoutMultiplier(Symbol symbol)
 {
     switch (symbol) {
     case Symbol::Skull: return GameConfig::SkullPayoutMultiplier;
@@ -141,7 +148,15 @@ int GameLogic::threeMatchPayoutMultiplier(Symbol symbol)
     case Symbol::Orange: return GameConfig::OrangePayoutMultiplier;
     case Symbol::Bell: return GameConfig::BellPayoutMultiplier;
     }
-    return 0;
+    return 0.0F;
+}
+
+int GameLogic::calculatePayout(int wager, float multiplier)
+{
+    Q_ASSERT(wager >= 0);
+    Q_ASSERT(multiplier >= 0.0F);
+    const float grossPayout = static_cast<float>(wager) * multiplier;
+    return static_cast<int>(std::floor(grossPayout));
 }
 
 QString GameLogic::symbolName(Symbol symbol)

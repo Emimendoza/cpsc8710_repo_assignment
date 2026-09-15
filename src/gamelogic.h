@@ -52,7 +52,7 @@ public:
     using SymbolGenerator = std::function<Symbol()>;
 
     GameLogic();
-    explicit GameLogic(SymbolGenerator generator);
+    explicit GameLogic(SymbolGenerator generator, bool riggedMode = GameConfig::RiggedMode);
 
     [[nodiscard]] const GameState &state() const;
     [[nodiscard]] bool canRoll() const;
@@ -65,12 +65,14 @@ public:
     [[nodiscard]] qint64 calculateScore() const;
 
     static SpinOutcome classify(const std::array<Symbol, 3> &reels);
-    static int threeMatchPayoutMultiplier(Symbol symbol);
+    static float threeMatchPayoutMultiplier(Symbol symbol);
+    static int calculatePayout(int wager, float multiplier);
     static QString symbolName(Symbol symbol);
 
 private:
     GameState state_;
     SymbolGenerator generator_;
+    bool riggedMode_ = false;
 
     void normalizeAfterCoinChange();
 };

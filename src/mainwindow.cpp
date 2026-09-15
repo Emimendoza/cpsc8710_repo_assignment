@@ -108,7 +108,11 @@ void MainWindow::buildUi()
     middle->addWidget(leverButton_, 0, Qt::AlignCenter);
     root->addLayout(middle, 1);
 
-    statusLabel_ = new QLabel(QStringLiteral("Choose your bet and pull the lever"), central);
+    statusLabel_ = new QLabel(
+        GameConfig::RiggedMode
+            ? QStringLiteral("RIGGED MODE — every spin is a triple")
+            : QStringLiteral("Choose your bet and pull the lever"),
+        central);
     statusLabel_->setObjectName(QStringLiteral("statusLabel"));
     statusLabel_->setAlignment(Qt::AlignCenter);
     statusLabel_->setAccessibleName(QStringLiteral("Spin result"));

@@ -10,7 +10,7 @@
 
 namespace {
 
-GameLogic withSequence(std::initializer_list<Symbol> symbols)
+GameLogic withSequence(std::initializer_list<Symbol> symbols, bool riggedMode = false)
 {
     auto sequence = std::make_shared<std::vector<Symbol>>(symbols);
     auto index = std::make_shared<std::size_t>(0);
@@ -18,7 +18,7 @@ GameLogic withSequence(std::initializer_list<Symbol> symbols)
         const Symbol value = sequence->at(*index % sequence->size());
         ++*index;
         return value;
-    });
+    }, riggedMode);
 }
 
 void setBet(GameLogic &game, int amount)
@@ -40,6 +40,8 @@ private slots:
     void validRollIncrementsOnce();
     void twoMatchingSymbolsReturnBet();
     void threeMatchUsesConfiguredMultiplier();
+    void fractionalPayoutRoundsDown();
+    void riggedModeAlwaysProducesTriples();
     void threeSkullsEndGameAndLoseEverything();
     void scoreUsesNetChangeAndRollNumber();
     void cannotRollAfterGameOver();
@@ -115,9 +117,31 @@ void GameLogicTest::threeMatchUsesConfiguredMultiplier()
                                       ? SpinOutcome::ThreeBar
                                       : SpinOutcome::ThreeOfAKind);
         QCOMPARE(GameLogic::threeMatchPayoutMultiplier(symbol), multiplier);
-        QCOMPARE(result->payout, 4 * multiplier);
-        QCOMPARE(game.state().coins, 100 - 4 + (4 * multiplier));
-        QCOMPARE(game.state().moneyWon, 4 * multiplier);
+        const int expectedPayout = GameLogic::calculatePayout(4, multiplier);
+        QCOMPARE(result->payout, expectedPayout);
+        QCOMPARE(game.state().coins, 100 - 4 + expectedPayout);
+        QCOMPARE(game.state().moneyWon, expectedPayout);
+    }
+}
+
+void GameLogicTest::fractionalPayoutRoundsDown()
+{
+    QCOMPARE(GameLogic::calculatePayout(5, 1.5F), 7);
+    QCOMPARE(GameLogic::calculatePayout(5, 1.25F), 6);
+    QCOMPARE(GameLogic::calculatePayout(3, 0.5F), 1);
+}
+
+void GameLogicTest::riggedModeAlwaysProducesTriples()
+{
+    auto game = withSequence({Symbol::Cherry, Symbol::Lemon, Symbol::Orange}, true);
+
+    for (const Symbol expected : {Symbol::Cherry, Symbol::Lemon, Symbol::Orange}) {
+        const auto result = game.spin();
+        QVERIFY(result.has_value());
+        QCOMPARE(result->reels[0], expected);
+        QCOMPARE(result->reels[1], expected);
+        QCOMPARE(result->reels[2], expected);
+        QCOMPARE(result->outcome, SpinOutcome::ThreeOfAKind);
     }
 }
 
@@ -128,7 +152,7 @@ void GameLogicTest::threeSkullsEndGameAndLoseEverything()
     const auto result = game.spin();
     QCOMPARE(GameConfig::SkullPayoutMultiplier,
              GameConfig::LoseAllCoinsPayoutMultiplier);
-    QCOMPARE(GameConfig::SkullPayoutMultiplier, -1);
+    QCOMPARE(GameConfig::SkullPayoutMultiplier, -1.0F);
     QCOMPARE(result->outcome, SpinOutcome::SkullJackpotLoss);
     QCOMPARE(game.state().coins, 0);
     QCOMPARE(game.state().moneyLost, 100);
